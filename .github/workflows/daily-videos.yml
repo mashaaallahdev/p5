@@ -16,9 +16,18 @@ on:
   workflow_dispatch:
     inputs:
       scene:
-        description: 'Scene number (0-5, leave empty for random)'
+        description: '🎬 Select Scene'
         required: false
-        default: ''
+        default: 'auto'
+        type: choice
+        options:
+          - 'auto'
+          - '0 - 🔴 Color Sorting Balls'
+          - '1 - 🌀 Spiral Satisfaction'
+          - '2 - 💧 Liquid Fill'
+          - '3 - ⚡ Particle Vortex'
+          - '4 - 🎯 Pendulum Wave'
+          - '5 - 🟢 Gravity Balls'
       duration:
         description: 'Video duration in seconds'
         required: false
@@ -60,6 +69,8 @@ jobs:
           VIDEO_HEIGHT: '1920'
           VIDEO_FPS: '30'
           VIDEO_DURATION: ${{ github.event.inputs.duration || '45' }}
+          VIDEO_SCENE: ${{ github.event.inputs.scene || 'auto' }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 

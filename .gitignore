@@ -2,5 +2,7 @@ node_modules/
 output/
 *.mp4
 *.webm
+*.wav
+.last_scene
 package-lock.json
 .env

@@ -348,8 +348,48 @@ async function main() {
   console.log('  🎬 SATISFYING ANIMATION VIDEO GENERATOR');
   console.log('═══════════════════════════════════════════\n');
 
-  // Pick random scene and unique seed
-  const scene = Math.floor(Math.random() * SCENE_NAMES.length);
+  // Scene Selection:
+  // 1. If explicit scene selected by user, use it.
+  // 2. Otherwise rotate sequentially using GitHub Run Number:
+  //    Run 1 -> Scene 0 (Color Sorting)
+  //    Run 2 -> Scene 1 (Spiral Satisfaction)
+  //    Run 3 -> Scene 2 (Liquid Fill)
+  //    Run 4 -> Scene 3 (Particle Vortex)
+  //    Run 5 -> Scene 4 (Pendulum Wave)
+  //    Run 6 -> Scene 5 (Gravity Balls)
+  //    Run 7 -> Scene 0...
+  //    This GUARANTEES every video is a different scene with NO duplicates!
+  let scene;
+  const sceneInput = (process.env.VIDEO_SCENE || '').trim();
+  if (sceneInput && !sceneInput.toLowerCase().startsWith('auto')) {
+    const match = sceneInput.match(/\d+/);
+    if (match) {
+      scene = parseInt(match[0], 10) % SCENE_NAMES.length;
+      console.log(`🎯 Manual scene requested: ${scene} (${SCENE_NAMES[scene]})`);
+    }
+  }
+
+  if (scene === undefined || isNaN(scene)) {
+    const runNum = parseInt(process.env.GITHUB_RUN_NUMBER, 10);
+    if (!isNaN(runNum) && runNum > 0) {
+      scene = (runNum - 1) % SCENE_NAMES.length;
+      console.log(`🔄 Auto rotation via GitHub Run #${runNum} → Scene ${scene}: ${SCENE_NAMES[scene]}`);
+    } else {
+      const stateFile = path.join(__dirname, '..', '.last_scene');
+      let lastScene = -1;
+      try {
+        if (fs.existsSync(stateFile)) {
+          lastScene = parseInt(fs.readFileSync(stateFile, 'utf8'), 10);
+        }
+      } catch (e) {}
+      scene = (isNaN(lastScene) ? 0 : lastScene + 1) % SCENE_NAMES.length;
+      try {
+        fs.writeFileSync(stateFile, String(scene));
+      } catch (e) {}
+      console.log(`🔄 Auto rotation via local sequence → Scene ${scene}: ${SCENE_NAMES[scene]}`);
+    }
+  }
+
   const seed = Date.now();
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const outputDir = path.join(__dirname, '..', 'output');
