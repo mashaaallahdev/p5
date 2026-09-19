@@ -489,14 +489,14 @@ class ColorSortingBalls {
     this.drawTitle("Color Sorting");
   }
 
-  drawTitle(text) {
+  drawTitle(label) {
     push();
     noStroke();
     fill(0, 0, 100, 60);
     textAlign(CENTER, TOP);
     textSize(52);
     textStyle(BOLD);
-    text(text, W / 2, 60);
+    text(label, W / 2, 60);
     pop();
   }
 }
