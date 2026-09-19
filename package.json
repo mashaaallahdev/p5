@@ -1,0 +1,12 @@
+{
+  "name": "satisfying-animations-auto",
+  "version": "1.0.0",
+  "description": "Automated satisfying animation video generator for Facebook/Telegram",
+  "scripts": {
+    "generate": "node scripts/generate-and-send.js",
+    "serve": "python -m http.server 8080"
+  },
+  "dependencies": {
+    "puppeteer": "^23.0.0"
+  }
+}

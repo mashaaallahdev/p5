@@ -1,0 +1,70 @@
+name: 🎬 Daily Satisfying Videos
+
+# Runs 3 times per day and sends videos to Telegram
+# Schedule is in UTC — converted to Bangladesh time (UTC+6):
+#   03:00 UTC = 09:00 AM Bangladesh
+#   10:00 UTC = 04:00 PM Bangladesh  
+#   16:00 UTC = 10:00 PM Bangladesh
+
+on:
+  schedule:
+    - cron: '0 3 * * *'    # 9:00 AM Bangladesh
+    - cron: '0 10 * * *'   # 4:00 PM Bangladesh
+    - cron: '0 16 * * *'   # 10:00 PM Bangladesh
+  
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      scene:
+        description: 'Scene number (0-5, leave empty for random)'
+        required: false
+        default: ''
+      duration:
+        description: 'Video duration in seconds'
+        required: false
+        default: '45'
+
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+jobs:
+  generate-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🔍 Verify FFmpeg
+        run: ffmpeg -version | head -1
+
+      - name: 🎬 Generate video & send to Telegram
+        run: node scripts/generate-and-send.js
+        env:
+          VIDEO_WIDTH: '1080'
+          VIDEO_HEIGHT: '1920'
+          VIDEO_FPS: '30'
+          VIDEO_DURATION: ${{ github.event.inputs.duration || '45' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: 📊 Job Summary
+        if: always()
+        run: |
+          echo "## 🎬 Video Generation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time:** $(date -u +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Resolution:** 1080x1920" >> $GITHUB_STEP_SUMMARY
+          echo "- **Duration:** ${{ github.event.inputs.duration || '45' }}s" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY

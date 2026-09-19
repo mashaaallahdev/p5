@@ -1,0 +1,6 @@
+node_modules/
+output/
+*.mp4
+*.webm
+package-lock.json
+.env
