@@ -21,6 +21,7 @@ const VIDEO_DURATION = parseInt(process.env.VIDEO_DURATION) || 45; // seconds
 const SERVER_PORT = 9222;
 
 const SCENE_NAMES = [
+  '3D Obstacle Highway Car Stunt',
   'Color Sorting Balls',
   'Spiral Satisfaction',
   'Liquid Fill',
@@ -29,21 +30,20 @@ const SCENE_NAMES = [
   'Gravity Balls'
 ];
 
-const SCENE_EMOJIS = ['🔴', '🌀', '💧', '⚡', '🎯', '🟢'];
+const SCENE_EMOJIS = ['🏎️', '🔴', '🌀', '💧', '⚡', '🎯', '🟢'];
 
-const HASHTAGS = '#satisfying #oddlysatisfying #asmr #animation #viral #mesmerizing #relaxing';
+const HASHTAGS = '#cargame #stuntcar #gaming #satisfying #asmr #viral #3danimation #reels';
 
 const CAPTIONS_POOL = [
-  'Watch till the end! So satisfying! 😍',
-  'Can you look away? 👀',
-  'This is pure satisfaction! 🤤',
-  'Perfectly smooth! ✨',
-  'I could watch this forever! 🔁',
-  'Tag someone who needs this! 🏷️',
-  'Rate this 1-10! 🔢',
-  'Which is your favorite? Comment below! 💬',
-  'SO SATISFYING! Turn on sound! 🔊',
-  'This will calm your mind! 🧘'
+  'Can the AI driver survive this obstacle course? 🏎️💨',
+  'That near-miss at the end was INSANE! 😱🔥',
+  'Rate this stunt driving 1-10! 🚗⚡',
+  'Watch till the mega jump landing! 🏆💥',
+  'Pure adrenaline! Turn sound ON! 🔊🔥',
+  'Closest call you will see today! 👀🏎️',
+  'Auto-pilot stunt run! Can it make it? 🏁',
+  'Satisfying 3D Obstacle Highway! 🤤✨',
+  'I did NOT expect that jump! 🚀😲'
 ];
 
 // ======================== STATIC FILE SERVER ========================
@@ -98,9 +98,11 @@ async function captureVideo(scene, seed, outputPath) {
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-gpu',
       '--disable-dev-shm-usage',
       '--disable-web-security',
+      '--use-gl=angle',
+      '--use-angle=swiftshader',
+      '--enable-webgl',
       `--window-size=${VIDEO_WIDTH},${VIDEO_HEIGHT}`
     ]
   });
@@ -108,7 +110,7 @@ async function captureVideo(scene, seed, outputPath) {
   const page = await browser.newPage();
   await page.setViewport({ width: VIDEO_WIDTH, height: VIDEO_HEIGHT });
 
-  const url = `http://localhost:${SERVER_PORT}/?auto=true&scene=${scene}&seed=${seed}`;
+  const url = `http://localhost:${SERVER_PORT}/?auto=true&scene=${scene}&seed=${seed}&duration=${VIDEO_DURATION}`;
   console.log(`🌐 Loading: ${url}`);
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
 

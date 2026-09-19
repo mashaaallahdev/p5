@@ -16,22 +16,31 @@ on:
   workflow_dispatch:
     inputs:
       scene:
-        description: '🎬 Select Scene'
+        description: '🎬 Select Game / Scene'
         required: false
         default: 'auto'
         type: choice
         options:
           - 'auto'
-          - '0 - 🔴 Color Sorting Balls'
-          - '1 - 🌀 Spiral Satisfaction'
-          - '2 - 💧 Liquid Fill'
-          - '3 - ⚡ Particle Vortex'
-          - '4 - 🎯 Pendulum Wave'
-          - '5 - 🟢 Gravity Balls'
+          - '0 - 🏎️ 3D Obstacle Highway Car Stunt'
+          - '1 - 🔴 Color Sorting Balls'
+          - '2 - 🌀 Spiral Satisfaction'
+          - '3 - 💧 Liquid Fill'
+          - '4 - ⚡ Particle Vortex'
+          - '5 - 🎯 Pendulum Wave'
+          - '6 - 🟢 Gravity Balls'
       duration:
-        description: 'Video duration in seconds'
+        description: '⏱️ Video Duration (seconds)'
         required: false
         default: '45'
+        type: choice
+        options:
+          - '45'
+          - '20'
+          - '30'
+          - '60'
+          - '120'
+          - '300'
 
 env:
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

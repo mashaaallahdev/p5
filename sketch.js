@@ -6,7 +6,7 @@
 let W = 1080;
 let H = 1920; // 9:16 vertical for Reels/Shorts
 let currentScene = 0;
-let totalScenes = 6;
+let totalScenes = 7;
 let sceneTimer = 0;
 let controlsVisible = true;
 
@@ -18,6 +18,7 @@ const _urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.lo
 const AUTO_MODE = _urlParams.get('auto') === 'true';
 const AUTO_SCENE = parseInt(_urlParams.get('scene'));
 const AUTO_SEED = parseInt(_urlParams.get('seed')) || Date.now();
+const AUTO_DURATION = parseInt(_urlParams.get('duration')) || 45;
 
 // Expose renderFrame for Puppeteer offline capture
 window.renderFrame = function () {
@@ -29,14 +30,17 @@ window.soundEvents = []; // Collect sound events for offline audio synthesis
 // ======================== SETUP ========================
 function setup() {
   let canvas = createCanvas(W, H);
+  const container = document.getElementById('game-container') || document.body;
+  canvas.parent(container);
   canvas.style('max-height', '100vh');
   canvas.style('width', 'auto');
   frameRate(60);
   pixelDensity(1);
   colorMode(HSB, 360, 100, 100, 100);
 
-  // Initialize all scenes
+  // Initialize all scenes (Scene 0 is 3D Car Game)
   scenes = [
+    new CarGameScene(),
     new ColorSortingBalls(),
     new SpiralSatisfaction(),
     new LiquidFill(),
@@ -53,7 +57,7 @@ function setup() {
     // CSS hue-rotate gives each video a unique color palette
     let hueRotation = AUTO_SEED % 360;
     canvas.elt.style.filter = 'hue-rotate(' + hueRotation + 'deg) saturate(' + (0.9 + (AUTO_SEED % 30) / 100) + ')';
-    let sceneIdx = isNaN(AUTO_SCENE) ? Math.floor(Math.random() * totalScenes) : AUTO_SCENE;
+    let sceneIdx = isNaN(AUTO_SCENE) ? 0 : AUTO_SCENE;
     switchScene(sceneIdx);
     noLoop(); // Frames rendered on-demand via window.renderFrame()
   } else {
@@ -238,6 +242,9 @@ function playDeep(pitch, x) {
 
 // ======================== SCENE MANAGEMENT ========================
 function switchScene(index) {
+  if (scenes[currentScene] && scenes[currentScene].destroy) {
+    scenes[currentScene].destroy();
+  }
   currentScene = index % totalScenes;
   sceneTimer = 0;
   scenes[currentScene].init();
@@ -299,6 +306,93 @@ function easeOutCubic(t) {
   return 1 - pow(1 - t, 3);
 }
 
+
+function playWebAudioEvent(evt) {
+  if (!evt) return;
+  switch (evt.type) {
+    case 'nitro':
+    case 'near_miss':
+    case 'jump':
+    case 'swoosh':
+      playSwoosh(evt.pitch || 8, evt.x);
+      break;
+    case 'drift':
+    case 'click':
+    case 'crusher':
+    case 'land':
+      playClick(evt.x);
+      break;
+    case 'win':
+      playDeep(12, evt.x);
+      break;
+    case 'coin':
+    case 'pop':
+    default:
+      playPop(evt.pitch || 6, evt.x);
+      break;
+  }
+}
+
+// ============================================================
+//  SCENE 0: 3D OBSTACLE HIGHWAY CAR GAME (Three.js + HUD)
+// ============================================================
+class CarGameScene {
+  constructor() {
+    this.game = null;
+  }
+
+  init() {
+    const container = document.getElementById('game-container') || document.body;
+    // Clean any prior canvases
+    const oldThree = document.getElementById('three-canvas');
+    if (oldThree && oldThree.parentNode) oldThree.parentNode.removeChild(oldThree);
+    const oldHud = document.getElementById('hud-canvas');
+    if (oldHud && oldHud.parentNode) oldHud.parentNode.removeChild(oldHud);
+
+    const duration = typeof AUTO_DURATION !== 'undefined' ? AUTO_DURATION : 45;
+    const seed = typeof AUTO_SEED !== 'undefined' ? AUTO_SEED : Date.now();
+    const autoMode = typeof AUTO_MODE !== 'undefined' ? AUTO_MODE : false;
+
+    if (typeof CarObstacleGame !== 'undefined') {
+      this.game = new CarObstacleGame(container, {
+        width: W,
+        height: H,
+        duration: duration,
+        seed: seed,
+        autoMode: autoMode
+      });
+    }
+  }
+
+  update() {
+    if (this.game) {
+      this.game.update();
+      if (this.game.soundEvents && this.game.soundEvents.length > 0) {
+        while (this.game.soundEvents.length > 0) {
+          const evt = this.game.soundEvents.shift();
+          if (AUTO_MODE) {
+            window.soundEvents.push(evt);
+          } else {
+            playWebAudioEvent(evt);
+          }
+        }
+      }
+    }
+  }
+
+  display() {
+    // 3D scene & 2D HUD render directly to the DOM within game-container
+    clear();
+  }
+
+  destroy() {
+    const oldThree = document.getElementById('three-canvas');
+    if (oldThree && oldThree.parentNode) oldThree.parentNode.removeChild(oldThree);
+    const oldHud = document.getElementById('hud-canvas');
+    if (oldHud && oldHud.parentNode) oldHud.parentNode.removeChild(oldHud);
+    this.game = null;
+  }
+}
 
 // ============================================================
 //  SCENE 1: COLOR SORTING BALLS

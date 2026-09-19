@@ -115,6 +115,38 @@ function generateWavFromEvents(soundEvents, durationSec, fps = 60) {
         synthesizeSwoosh(leftChannel, rightChannel, startSample, evt.pitch, leftGain, rightGain);
         break;
 
+      case 'nitro':
+        synthesizeNitro(leftChannel, rightChannel, startSample, leftGain, rightGain);
+        break;
+
+      case 'drift':
+        synthesizeDrift(leftChannel, rightChannel, startSample, leftGain, rightGain);
+        break;
+
+      case 'near_miss':
+        synthesizeNearMiss(leftChannel, rightChannel, startSample, leftGain, rightGain);
+        break;
+
+      case 'jump':
+        synthesizeJump(leftChannel, rightChannel, startSample, leftGain, rightGain);
+        break;
+
+      case 'land':
+        synthesizeLand(leftChannel, rightChannel, startSample, leftGain, rightGain);
+        break;
+
+      case 'coin':
+        synthesizeCoin(leftChannel, rightChannel, startSample, evt.pitch, leftGain, rightGain);
+        break;
+
+      case 'crusher':
+        synthesizeCrusher(leftChannel, rightChannel, startSample, leftGain, rightGain);
+        break;
+
+      case 'win':
+        synthesizeWin(leftChannel, rightChannel, startSample, leftGain, rightGain);
+        break;
+
       default:
         synthesizePop(leftChannel, rightChannel, startSample, evt.pitch, leftGain, rightGain);
         break;
@@ -303,6 +335,233 @@ function synthesizeSwoosh(left, right, startSample, pitch, leftGain, rightGain) 
     const noise = (Math.random() * 2 - 1) * 0.15;
     const sample = (Math.sin(phase) * 0.85 + noise) * env;
 
+    left[idx] += sample * leftGain;
+    right[idx] += sample * rightGain;
+  }
+}
+
+/**
+ * Nitro Boost: Deep sub rumble + rising turbo turbine whoosh
+ */
+function synthesizeNitro(left, right, startSample, leftGain, rightGain) {
+  const duration = 0.85; // 850ms
+  const numSamples = Math.floor(duration * SAMPLE_RATE);
+  let subPhase = 0;
+  let turbinePhase = 0;
+
+  for (let s = 0; s < numSamples; s++) {
+    const idx = startSample + s;
+    if (idx >= left.length) break;
+
+    const t = s / SAMPLE_RATE;
+    const progress = t / duration;
+
+    // Sub rumble drops from 95Hz to 45Hz
+    const subFreq = 95 - progress * 50;
+    subPhase += (2 * Math.PI * subFreq) / SAMPLE_RATE;
+    const sub = Math.sin(subPhase) * Math.exp(-t / 0.35) * 0.45;
+
+    // Turbine rising whistle (600Hz up to 1800Hz)
+    const turbFreq = 600 + progress * 1200;
+    turbinePhase += (2 * Math.PI * turbFreq) / SAMPLE_RATE;
+    const turb = Math.sin(turbinePhase) * Math.sin(progress * Math.PI) * 0.25;
+
+    // Air rush noise
+    const noise = (Math.random() * 2 - 1) * Math.sin(progress * Math.PI) * 0.32;
+
+    const sample = sub + turb + noise;
+    left[idx] += sample * leftGain;
+    right[idx] += sample * rightGain;
+  }
+}
+
+/**
+ * Tire Screech Drift: High friction squeal + resonant noise
+ */
+function synthesizeDrift(left, right, startSample, leftGain, rightGain) {
+  const duration = 0.45; // 450ms
+  const numSamples = Math.floor(duration * SAMPLE_RATE);
+  let squealPhase1 = 0;
+  let squealPhase2 = 0;
+
+  for (let s = 0; s < numSamples; s++) {
+    const idx = startSample + s;
+    if (idx >= left.length) break;
+
+    const t = s / SAMPLE_RATE;
+    const env = Math.sin((t / duration) * Math.PI) * 0.38;
+
+    // Dual squeal frequencies with slight vibrato jitter
+    const jitter = Math.sin(t * 85) * 60;
+    const f1 = 1250 + jitter;
+    const f2 = 1750 - jitter;
+
+    squealPhase1 += (2 * Math.PI * f1) / SAMPLE_RATE;
+    squealPhase2 += (2 * Math.PI * f2) / SAMPLE_RATE;
+
+    const squeal = (Math.sin(squealPhase1) * 0.5 + Math.sin(squealPhase2) * 0.3) * env;
+    const friction = (Math.random() * 2 - 1) * env * 0.2;
+
+    const sample = squeal + friction;
+    left[idx] += sample * leftGain;
+    right[idx] += sample * rightGain;
+  }
+}
+
+/**
+ * Near-Miss Whoosh: Fast high-velocity doppler sweep
+ */
+function synthesizeNearMiss(left, right, startSample, leftGain, rightGain) {
+  const duration = 0.38;
+  const numSamples = Math.floor(duration * SAMPLE_RATE);
+  let phase = 0;
+
+  for (let s = 0; s < numSamples; s++) {
+    const idx = startSample + s;
+    if (idx >= left.length) break;
+
+    const t = s / SAMPLE_RATE;
+    const progress = t / duration;
+    // Doppler pitch drops as obstacle whizzes past
+    const freq = 850 * Math.exp(-progress * 1.8);
+    phase += (2 * Math.PI * freq) / SAMPLE_RATE;
+
+    const env = Math.sin(progress * Math.PI) * 0.42;
+    const noise = (Math.random() * 2 - 1) * 0.25 * env;
+    const tone = Math.sin(phase) * env * 0.75;
+
+    const sample = tone + noise;
+    left[idx] += sample * leftGain;
+    right[idx] += sample * rightGain;
+  }
+}
+
+/**
+ * Jump Launch: Airtime whoosh
+ */
+function synthesizeJump(left, right, startSample, leftGain, rightGain) {
+  const duration = 0.5;
+  const numSamples = Math.floor(duration * SAMPLE_RATE);
+  let phase = 0;
+
+  for (let s = 0; s < numSamples; s++) {
+    const idx = startSample + s;
+    if (idx >= left.length) break;
+
+    const t = s / SAMPLE_RATE;
+    const progress = t / duration;
+    // Rising pitch
+    const freq = 220 + progress * 500;
+    phase += (2 * Math.PI * freq) / SAMPLE_RATE;
+
+    const env = Math.sin(progress * Math.PI) * 0.45;
+    const sample = Math.sin(phase) * env;
+
+    left[idx] += sample * leftGain;
+    right[idx] += sample * rightGain;
+  }
+}
+
+/**
+ * Heavy Suspension Land: Dual thump + spring dampening
+ */
+function synthesizeLand(left, right, startSample, leftGain, rightGain) {
+  const duration = 0.35;
+  const numSamples = Math.floor(duration * SAMPLE_RATE);
+  let thudPhase = 0;
+
+  for (let s = 0; s < numSamples; s++) {
+    const idx = startSample + s;
+    if (idx >= left.length) break;
+
+    const t = s / SAMPLE_RATE;
+    const env = Math.exp(-t / 0.08) * 0.55;
+    // Low sub thud 75Hz dropping to 40Hz
+    thudPhase += (2 * Math.PI * (75 - t * 80)) / SAMPLE_RATE;
+
+    const sample = Math.sin(thudPhase) * env;
+    left[idx] += sample * leftGain;
+    right[idx] += sample * rightGain;
+  }
+}
+
+/**
+ * Coin / Diamond Pickup: Crystal bell chime
+ */
+function synthesizeCoin(left, right, startSample, pitch, leftGain, rightGain) {
+  const f0 = getPitchFreq(pitch, 11); // High crystalline note
+  const duration = 0.3;
+  const numSamples = Math.floor(duration * SAMPLE_RATE);
+  let phase1 = 0;
+  let phase2 = 0;
+
+  for (let s = 0; s < numSamples; s++) {
+    const idx = startSample + s;
+    if (idx >= left.length) break;
+
+    const t = s / SAMPLE_RATE;
+    const env = Math.exp(-t / 0.08) * 0.42;
+
+    phase1 += (2 * Math.PI * f0) / SAMPLE_RATE;
+    phase2 += (2 * Math.PI * f0 * 2.76) / SAMPLE_RATE; // Glass overtone
+
+    const sample = (Math.sin(phase1) * 0.8 + Math.sin(phase2) * 0.2) * env;
+    left[idx] += sample * leftGain;
+    right[idx] += sample * rightGain;
+  }
+}
+
+/**
+ * Hydraulic Crusher: Heavy steel mechanical slam
+ */
+function synthesizeCrusher(left, right, startSample, leftGain, rightGain) {
+  const duration = 0.28;
+  const numSamples = Math.floor(duration * SAMPLE_RATE);
+  let slamPhase = 0;
+  let ringPhase = 0;
+
+  for (let s = 0; s < numSamples; s++) {
+    const idx = startSample + s;
+    if (idx >= left.length) break;
+
+    const t = s / SAMPLE_RATE;
+    const snap = Math.exp(-t / 0.005) * 0.6; // Instant crack
+    const thud = Math.exp(-t / 0.07) * 0.45;
+
+    slamPhase += (2 * Math.PI * 90) / SAMPLE_RATE;
+    ringPhase += (2 * Math.PI * 480) / SAMPLE_RATE; // Metal ring
+
+    const sample = Math.sin(slamPhase) * thud + Math.sin(ringPhase) * snap * 0.3;
+    left[idx] += sample * leftGain;
+    right[idx] += sample * rightGain;
+  }
+}
+
+/**
+ * Victory Stunt Landing Fanfare
+ */
+function synthesizeWin(left, right, startSample, leftGain, rightGain) {
+  const duration = 2.4;
+  const numSamples = Math.floor(duration * SAMPLE_RATE);
+  // Grand major triad (C4, E4, G4, C5)
+  const freqs = [261.63, 329.63, 392.00, 523.25];
+  const phases = [0, 0, 0, 0];
+
+  for (let s = 0; s < numSamples; s++) {
+    const idx = startSample + s;
+    if (idx >= left.length) break;
+
+    const t = s / SAMPLE_RATE;
+    const attack = Math.min(1.0, t / 0.02);
+    const env = attack * Math.exp(-t / 0.8) * 0.45;
+
+    let sample = 0;
+    for (let f = 0; f < freqs.length; f++) {
+      phases[f] += (2 * Math.PI * freqs[f]) / SAMPLE_RATE;
+      sample += Math.sin(phases[f]) * (1.0 / freqs.length);
+    }
+
+    sample *= env;
     left[idx] += sample * leftGain;
     right[idx] += sample * rightGain;
   }
