@@ -10,15 +10,11 @@ let totalScenes = 6;
 let sceneTimer = 0;
 let controlsVisible = true;
 
-// Sound
-let popSynth, swooshSynth, clickSynth, deepSynth;
-let reverb;
-
 // Scenes
 let scenes = [];
 
 // ======================== AUTO MODE ========================
-const _urlParams = new URLSearchParams(window.location.search);
+const _urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
 const AUTO_MODE = _urlParams.get('auto') === 'true';
 const AUTO_SCENE = parseInt(_urlParams.get('scene'));
 const AUTO_SEED = parseInt(_urlParams.get('seed')) || Date.now();
@@ -28,6 +24,7 @@ window.renderFrame = function () {
   redraw();
 };
 window.isReady = false;
+window.soundEvents = []; // Collect sound events for offline audio synthesis
 
 // ======================== SETUP ========================
 function setup() {
@@ -37,11 +34,6 @@ function setup() {
   frameRate(60);
   pixelDensity(1);
   colorMode(HSB, 360, 100, 100, 100);
-
-  // Initialize procedural sounds (skip in auto/headless mode)
-  if (!AUTO_MODE) {
-    initSounds();
-  }
 
   // Initialize all scenes
   scenes = [
@@ -55,7 +47,8 @@ function setup() {
 
   // Auto mode: headless rendering for CI video generation
   if (AUTO_MODE) {
-    document.getElementById('controls').style.display = 'none';
+    const controls = document.getElementById('controls');
+    if (controls) controls.style.display = 'none';
     randomSeed(AUTO_SEED);
     // CSS hue-rotate gives each video a unique color palette
     let hueRotation = AUTO_SEED % 360;
@@ -78,51 +71,169 @@ function draw() {
   sceneTimer++;
 }
 
-// ======================== SOUNDS ========================
-function initSounds() {
-  reverb = new p5.Reverb();
+// ======================== AUDIO SYSTEM ========================
+// Harmonious pentatonic scale (C3 to G6)
+const AUDIO_SCALE = [
+  130.81, 146.83, 164.81, 196.00, 220.00,
+  261.63, 293.66, 329.63, 392.00, 440.00,
+  523.25, 587.33, 659.25, 783.99, 880.00,
+  1046.50, 1174.66, 1318.51, 1567.98
+];
 
-  popSynth = new p5.MonoSynth();
-  popSynth.setADSR(0.005, 0.08, 0.01, 0.1);
-  reverb.process(popSynth, 1.5, 3);
+let webAudioCtx = null;
 
-  swooshSynth = new p5.MonoSynth();
-  swooshSynth.setADSR(0.01, 0.3, 0.05, 0.4);
-  reverb.process(swooshSynth, 2, 4);
-
-  clickSynth = new p5.MonoSynth();
-  clickSynth.setADSR(0.001, 0.03, 0.0, 0.02);
-  reverb.process(clickSynth, 0.8, 2);
-
-  deepSynth = new p5.MonoSynth();
-  deepSynth.setADSR(0.02, 0.5, 0.2, 0.8);
-  reverb.process(deepSynth, 3, 5);
+function getAudioCtx() {
+  if (AUTO_MODE) return null;
+  if (!webAudioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      webAudioCtx = new AudioContextClass();
+    }
+  }
+  if (webAudioCtx && webAudioCtx.state === 'suspended') {
+    webAudioCtx.resume();
+  }
+  return webAudioCtx;
 }
 
-function playPop(pitch) {
-  if (AUTO_MODE) return;
-  let notes = ['C4', 'E4', 'G4', 'A4', 'C5', 'D5', 'E5', 'G5'];
-  let note = notes[pitch % notes.length];
-  popSynth.play(note, 0.3, 0, 0.15);
+// Auto unlock audio on any interaction
+if (typeof window !== 'undefined') {
+  ['click', 'touchstart', 'keydown'].forEach(evt => {
+    window.addEventListener(evt, () => getAudioCtx(), { passive: true });
+  });
 }
 
-function playClick() {
-  if (AUTO_MODE) return;
-  clickSynth.play('C6', 0.15, 0, 0.03);
+function playPop(pitch, x) {
+  if (AUTO_MODE) {
+    window.soundEvents.push({ frame: sceneTimer, type: 'pop', pitch: pitch, x: x });
+    return;
+  }
+  const ctx = getAudioCtx();
+  if (!ctx || ctx.state !== 'running') return;
+  const now = ctx.currentTime;
+  const f0 = AUDIO_SCALE[Math.abs(Math.floor(pitch || 0)) % AUDIO_SCALE.length];
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(f0 * 1.6, now);
+  osc.frequency.exponentialRampToValueAtTime(f0, now + 0.015);
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.linearRampToValueAtTime(0.45, now + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+
+  if (ctx.createStereoPanner && typeof x === 'number') {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-0.8, Math.min(0.8, ((x / W) - 0.5) * 1.2));
+    osc.connect(gain);
+    gain.connect(pan);
+    pan.connect(ctx.destination);
+  } else {
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+  }
+
+  osc.start(now);
+  osc.stop(now + 0.22);
 }
 
-function playSwoosh(pitch) {
-  if (AUTO_MODE) return;
-  let notes = ['C3', 'E3', 'G3', 'C4'];
-  let note = notes[pitch % notes.length];
-  swooshSynth.play(note, 0.2, 0, 0.3);
+function playClick(x) {
+  if (AUTO_MODE) {
+    window.soundEvents.push({ frame: sceneTimer, type: 'click', pitch: 0, x: x });
+    return;
+  }
+  const ctx = getAudioCtx();
+  if (!ctx || ctx.state !== 'running') return;
+  const now = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(1500, now);
+  osc.frequency.exponentialRampToValueAtTime(750, now + 0.025);
+
+  gain.gain.setValueAtTime(0.35, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+  if (ctx.createStereoPanner && typeof x === 'number') {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-0.8, Math.min(0.8, ((x / W) - 0.5) * 1.2));
+    osc.connect(gain);
+    gain.connect(pan);
+    pan.connect(ctx.destination);
+  } else {
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+  }
+
+  osc.start(now);
+  osc.stop(now + 0.045);
 }
 
-function playDeep(pitch) {
-  if (AUTO_MODE) return;
-  let notes = ['C2', 'E2', 'G2', 'A2'];
-  let note = notes[pitch % notes.length];
-  deepSynth.play(note, 0.25, 0, 0.6);
+function playSwoosh(pitch, x) {
+  if (AUTO_MODE) {
+    window.soundEvents.push({ frame: sceneTimer, type: 'swoosh', pitch: pitch, x: x });
+    return;
+  }
+  const ctx = getAudioCtx();
+  if (!ctx || ctx.state !== 'running') return;
+  const now = ctx.currentTime;
+  const f0 = AUDIO_SCALE[Math.abs(Math.floor(pitch || 0)) % AUDIO_SCALE.length];
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(f0 * 0.8, now);
+  osc.frequency.linearRampToValueAtTime(f0 * 1.3, now + 0.2);
+  osc.frequency.linearRampToValueAtTime(f0 * 0.9, now + 0.4);
+
+  gain.gain.setValueAtTime(0.001, now);
+  gain.gain.linearRampToValueAtTime(0.28, now + 0.18);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+
+  if (ctx.createStereoPanner && typeof x === 'number') {
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-0.8, Math.min(0.8, ((x / W) - 0.5) * 1.2));
+    osc.connect(gain);
+    gain.connect(pan);
+    pan.connect(ctx.destination);
+  } else {
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+  }
+
+  osc.start(now);
+  osc.stop(now + 0.45);
+}
+
+function playDeep(pitch, x) {
+  if (AUTO_MODE) {
+    window.soundEvents.push({ frame: sceneTimer, type: 'deep', pitch: pitch, x: x });
+    return;
+  }
+  const ctx = getAudioCtx();
+  if (!ctx || ctx.state !== 'running') return;
+  const now = ctx.currentTime;
+  const f0 = AUDIO_SCALE[Math.abs(Math.floor(pitch || 0)) % AUDIO_SCALE.length] * 0.5;
+
+  [1.0, 1.498, 2.0].forEach((mult, idx) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = idx === 0 ? 'triangle' : 'sine';
+    osc.frequency.value = f0 * mult;
+
+    const vol = idx === 0 ? 0.42 : 0.22;
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 1.3);
+  });
 }
 
 // ======================== SCENE MANAGEMENT ========================
@@ -277,7 +388,7 @@ class ColorSortingBalls {
             ball.vy = 0;
             bucket.fillLevel++;
             ball.x = bucket.x;
-            playPop(ball.colorIdx);
+            playPop(ball.colorIdx, ball.x);
           } else {
             // Bounce
             ball.vy *= -0.5;
@@ -289,7 +400,7 @@ class ColorSortingBalls {
               ball.targetX = bucket.x;
               ball.targetY = bucket.y + bucket.h - bucket.fillLevel * (ball.r * 2 + 4) - ball.r;
             }
-            playClick();
+            playClick(ball.x);
           }
         }
 
@@ -313,8 +424,19 @@ class ColorSortingBalls {
           ball.x = bucket.x;
           ball.y = ball.targetY;
           bucket.fillLevel++;
-          playPop(ball.colorIdx);
+          playPop(ball.colorIdx, ball.x);
         }
+      }
+    }
+
+    // Seamless loop: when all balls have settled, trigger completion chime and launch fresh wave
+    const allSettled = this.balls.length > 0 && this.balls.every(b => b.state === 'settled');
+    if (allSettled) {
+      this.settleTimer = (this.settleTimer || 0) + 1;
+      if (this.settleTimer > 45) {
+        playDeep(0, W / 2);
+        this.settleTimer = 0;
+        this.init();
       }
     }
   }
@@ -409,10 +531,19 @@ class SpiralSatisfaction {
   }
 
   update() {
-    // Sound on beat
-    if (sceneTimer % 30 === 0 && sceneTimer !== this.lastSoundFrame) {
+    // Rhythmic musical arpeggio synced to spiral rotation and arm breathing
+    if (sceneTimer % 15 === 0 && sceneTimer !== this.lastSoundFrame) {
       this.lastSoundFrame = sceneTimer;
-      playPop((sceneTimer / 30) % 8);
+      let beat = Math.floor(sceneTimer / 15);
+      let note = (beat * 2) % 14;
+      let arm = beat % this.numArms;
+      let angle = (TWO_PI / this.numArms) * arm + sceneTimer * 0.02;
+      let x = (W / 2) + cos(angle) * 260;
+      playPop(note, x);
+
+      if (beat % 16 === 0) {
+        playDeep((beat / 16) % 4, W / 2);
+      }
     }
   }
 
@@ -507,20 +638,21 @@ class LiquidFill {
 
   update() {
     if (this.currentShape >= this.shapes.length) {
-      this.init(); // Loop
-      return;
+      this.currentShape = 0;
     }
 
     let shape = this.shapes[this.currentShape];
     shape.fillAmount += 0.008;
 
-    // Sound on progress milestones
-    if (Math.floor(shape.fillAmount * 20) > Math.floor((shape.fillAmount - 0.008) * 20)) {
-      playPop(Math.floor(shape.fillAmount * 8));
+    // Sound on progress milestones: ascending scale as liquid level rises
+    let currentStep = Math.floor(shape.fillAmount * 25);
+    let prevStep = Math.floor((shape.fillAmount - 0.008) * 25);
+    if (currentStep > prevStep && currentStep <= 25) {
+      playPop(currentStep % 16, shape.x + random(-40, 40));
     }
 
     // Add particles
-    if (shape.fillAmount < 1 && frameCount % 2 === 0) {
+    if (shape.fillAmount < 1 && sceneTimer % 3 === 0) {
       shape.particles.push({
         x: shape.x + random(-10, 10),
         y: shape.y - shape.size / 2,
@@ -540,10 +672,12 @@ class LiquidFill {
     }
     shape.particles = shape.particles.filter(p => p.life > 0 && p.y < H);
 
-    if (shape.fillAmount >= 1.3) {
+    if (shape.fillAmount >= 1.25) {
       shape.filled = true;
-      playDeep(this.currentShape);
-      this.currentShape++;
+      playDeep(this.currentShape, shape.x);
+      this.currentShape = (this.currentShape + 1) % this.shapes.length;
+      this.shapes[this.currentShape].fillAmount = 0;
+      this.shapes[this.currentShape].particles = [];
       this.fillProgress = 0;
     }
   }
@@ -748,9 +882,20 @@ class ParticleVortex {
       if (p.trail.length > p.trailLen) p.trail.pop();
     }
 
-    // Ambient sound
-    if (sceneTimer % 60 === 0) {
-      playSwoosh(Math.floor(sceneTimer / 60) % 4);
+    // Interactive vortex soundscape: swooshes, chime sparkles, and resonant core pulses
+    if (sceneTimer % 45 === 0) {
+      let step = Math.floor(sceneTimer / 45);
+      let xPan = (step % 2 === 0) ? W * 0.25 : W * 0.75;
+      playSwoosh(step % 4, xPan);
+    }
+    if (sceneTimer % 20 === 0) {
+      let step = Math.floor(sceneTimer / 20);
+      let note = (step * 3) % 14;
+      let sparkleX = W / 2 + sin(sceneTimer * 0.04) * 240;
+      playPop(note, sparkleX);
+    }
+    if (sceneTimer % 180 === 0) {
+      playDeep(Math.floor(sceneTimer / 180) % 4, W / 2);
     }
   }
 
@@ -803,6 +948,7 @@ class PendulumWave {
         x: map(i, 0, this.numPendulums - 1, 120, W - 120),
         length: map(i, 0, this.numPendulums - 1, 250, 700),
         angle: 0,
+        prevAngle: 0,
         frequency: map(i, 0, this.numPendulums - 1, 0.03, 0.07),
         amplitude: PI / 3.5,
         hue: map(i, 0, this.numPendulums - 1, 0, 300),
@@ -816,6 +962,8 @@ class PendulumWave {
   update() {
     for (let i = 0; i < this.pendulums.length; i++) {
       let p = this.pendulums[i];
+      let prev = p.angle;
+      p.prevAngle = prev;
       p.angle = sin(sceneTimer * p.frequency) * p.amplitude;
 
       let bx = p.x + sin(p.angle) * p.length;
@@ -824,10 +972,10 @@ class PendulumWave {
       p.trail.unshift({ x: bx, y: by });
       if (p.trail.length > 12) p.trail.pop();
 
-      // Sound when pendulum crosses center
-      if (abs(p.angle) < 0.03 && sceneTimer - p.lastSoundTrigger > 20) {
+      // Zero crossing: each pendulum plays its tuned note as it sweeps through center!
+      if (((prev < 0 && p.angle >= 0) || (prev > 0 && p.angle <= 0)) && (sceneTimer - p.lastSoundTrigger > 8)) {
         p.lastSoundTrigger = sceneTimer;
-        if (i % 4 === 0) playClick();
+        playPop(i % 16, bx);
       }
     }
   }
@@ -939,11 +1087,21 @@ class GravityBalls {
       if (ball.trail.length > 8) ball.trail.pop();
 
       // Wall bounce
-      if (ball.x < ball.r) { ball.x = ball.r; ball.vx *= -0.8; }
-      if (ball.x > W - ball.r) { ball.x = W - ball.r; ball.vx *= -0.8; }
+      // Wall bounce
+      if (ball.x < ball.r) { 
+        ball.x = ball.r; 
+        ball.vx *= -0.8; 
+        playClick(ball.x);
+      }
+      if (ball.x > W - ball.r) { 
+        ball.x = W - ball.r; 
+        ball.vx *= -0.8; 
+        playClick(ball.x);
+      }
 
       // Platform collision
-      for (let plat of this.platforms) {
+      for (let pIdx = 0; pIdx < this.platforms.length; pIdx++) {
+        let plat = this.platforms[pIdx];
         let px1 = plat.x - (plat.w / 2) * cos(plat.angle);
         let py1 = plat.y - (plat.w / 2) * sin(plat.angle);
         let px2 = plat.x + (plat.w / 2) * cos(plat.angle);
@@ -958,9 +1116,8 @@ class GravityBalls {
             ball.vy *= -0.7;
             ball.vx += plat.angle * 6;
             ball.bounces++;
-            if (ball.bounces <= 12) {
-              playPop(ball.bounces % 8);
-            }
+            // Each platform tier plays a tuned note down the musical ladder
+            playPop((12 - pIdx) % 14, ball.x);
           }
         }
       }

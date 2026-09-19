@@ -196,7 +196,12 @@ async function captureVideo(scene, seed, outputPath) {
     });
   });
 
+  // Extract interactive sound events recorded during frame execution
+  const soundEvents = await page.evaluate(() => window.soundEvents || []);
+  console.log(`🎵 Collected ${soundEvents.length} interactive sound events from animation!`);
+
   await browser.close();
+  return soundEvents;
 }
 
 // ======================== TELEGRAM ========================
@@ -282,57 +287,30 @@ async function sendToTelegram(videoPath, caption) {
   });
 }
 
-// ======================== AMBIENT AUDIO ========================
-// Generates a pleasant ambient soundscape using FFmpeg synthesis:
-//   - C major chord pad (C4 + E4 + G4) with tremolo
-//   - Filtered pink noise for soft texture
-//   - Echo/reverb for depth
-//   - Fade in/out for polish
-async function addAmbientAudio(silentVideoPath, finalVideoPath, duration) {
-  console.log('\n🔊 Adding ambient audio...');
+// ======================== INTERACTIVE AUDIO ========================
+// Synthesizes crystal-clear, loud, frame-perfect sound effects
+// matched with visual animation events (pops, clicks, drops, swooshes, chimes)
+async function addInteractiveAudio(silentVideoPath, finalVideoPath, soundEvents, duration) {
+  console.log(`\n🔊 Synthesizing interactive audio (${soundEvents.length} events)...`);
+  const { generateWavFromEvents } = require('./audio-synth');
 
-  const fadeOut = Math.max(0, duration - 3);
+  const outputDir = path.dirname(finalVideoPath);
+  const tempWavPath = path.join(outputDir, `audio_${Date.now()}.wav`);
+
+  // Generate 44.1kHz 16-bit stereo WAV buffer from sound events
+  // Video runs at VIDEO_FPS (30), animation steps at 60fps
+  const wavBuffer = generateWavFromEvents(soundEvents, duration, 60);
+  fs.writeFileSync(tempWavPath, wavBuffer);
+  console.log(`✅ Audio synthesized: ${(wavBuffer.length / 1024 / 1024).toFixed(2)} MB`);
 
   return new Promise((resolve, reject) => {
+    // Mux silent MP4 + synthesized audio WAV (AAC 192k)
     const ffmpeg = spawn('ffmpeg', [
-      // Input 0: silent video
       '-i', silentVideoPath,
-      // Input 1: C4 tone (261.63 Hz)
-      '-f', 'lavfi', '-i', `sine=frequency=261.63:duration=${duration}`,
-      // Input 2: E4 tone (329.63 Hz)
-      '-f', 'lavfi', '-i', `sine=frequency=329.63:duration=${duration}`,
-      // Input 3: G4 tone (392 Hz)
-      '-f', 'lavfi', '-i', `sine=frequency=392:duration=${duration}`,
-      // Input 4: pink noise ambient texture
-      '-f', 'lavfi', '-i', `anoisesrc=duration=${duration}:color=pink:sample_rate=44100`,
-      // Audio filter chain
-      '-filter_complex',
-      [
-        // Set volume for each tone
-        '[1]volume=0.06[c]',
-        '[2]volume=0.05[e]',
-        '[3]volume=0.04[g]',
-        // Filter noise to soft ambient
-        '[4]highpass=f=400,lowpass=f=1200,volume=0.08[noise]',
-        // Mix all audio sources
-        '[c][e][g][noise]amix=inputs=4:duration=first',
-        // Add tremolo for pulsing feel
-        'tremolo=f=0.1:d=0.5',
-        // Add echo for depth/reverb
-        'aecho=0.8:0.7:500:0.3',
-        // Fade in (3s) and fade out (3s)
-        `afade=t=in:st=0:d=3`,
-        `afade=t=out:st=${fadeOut}:d=3`,
-        // Final volume adjustment
-        'volume=1.5[audio]'
-      ].join(','),
-      // Map video from input 0, audio from filter
-      '-map', '0:v',
-      '-map', '[audio]',
-      // Copy video (no re-encode), encode audio as AAC
+      '-i', tempWavPath,
       '-c:v', 'copy',
       '-c:a', 'aac',
-      '-b:a', '128k',
+      '-b:a', '192k',
       '-shortest',
       '-y',
       finalVideoPath
@@ -340,21 +318,24 @@ async function addAmbientAudio(silentVideoPath, finalVideoPath, duration) {
 
     let stderrOutput = '';
     ffmpeg.stderr.on('data', (data) => {
-      stderrOutput = data.toString();
+      stderrOutput += data.toString();
     });
 
     ffmpeg.on('close', (code) => {
+      if (fs.existsSync(tempWavPath)) fs.unlinkSync(tempWavPath);
+
       if (code === 0) {
         const fileSize = (fs.statSync(finalVideoPath).size / 1024 / 1024).toFixed(2);
-        console.log(`✅ Audio added! Final video: ${finalVideoPath} (${fileSize} MB)`);
+        console.log(`✅ Final video with interactive audio saved: ${finalVideoPath} (${fileSize} MB)`);
         resolve();
       } else {
-        console.error('FFmpeg audio error:', stderrOutput);
+        console.error('FFmpeg audio merge error:', stderrOutput);
         reject(new Error(`FFmpeg audio merge failed with code ${code}`));
       }
     });
 
     ffmpeg.on('error', (err) => {
+      if (fs.existsSync(tempWavPath)) fs.unlinkSync(tempWavPath);
       console.error('FFmpeg spawn error:', err.message);
       reject(err);
     });
@@ -384,11 +365,11 @@ async function main() {
   const server = await startServer(projectRoot);
 
   try {
-    // 2. Capture silent video
-    await captureVideo(scene, seed, silentPath);
+    // 2. Capture silent video + collect interactive sound events
+    const soundEvents = await captureVideo(scene, seed, silentPath);
 
-    // 3. Add ambient audio
-    await addAmbientAudio(silentPath, finalPath, VIDEO_DURATION);
+    // 3. Add interactive audio matched to video
+    await addInteractiveAudio(silentPath, finalPath, soundEvents, VIDEO_DURATION);
 
     // 4. Send to Telegram
     await sendToTelegram(finalPath, caption);
