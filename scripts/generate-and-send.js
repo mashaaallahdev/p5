@@ -282,6 +282,85 @@ async function sendToTelegram(videoPath, caption) {
   });
 }
 
+// ======================== AMBIENT AUDIO ========================
+// Generates a pleasant ambient soundscape using FFmpeg synthesis:
+//   - C major chord pad (C4 + E4 + G4) with tremolo
+//   - Filtered pink noise for soft texture
+//   - Echo/reverb for depth
+//   - Fade in/out for polish
+async function addAmbientAudio(silentVideoPath, finalVideoPath, duration) {
+  console.log('\n🔊 Adding ambient audio...');
+
+  const fadeOut = Math.max(0, duration - 3);
+
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', [
+      // Input 0: silent video
+      '-i', silentVideoPath,
+      // Input 1: C4 tone (261.63 Hz)
+      '-f', 'lavfi', '-i', `sine=frequency=261.63:duration=${duration}`,
+      // Input 2: E4 tone (329.63 Hz)
+      '-f', 'lavfi', '-i', `sine=frequency=329.63:duration=${duration}`,
+      // Input 3: G4 tone (392 Hz)
+      '-f', 'lavfi', '-i', `sine=frequency=392:duration=${duration}`,
+      // Input 4: pink noise ambient texture
+      '-f', 'lavfi', '-i', `anoisesrc=duration=${duration}:color=pink:sample_rate=44100`,
+      // Audio filter chain
+      '-filter_complex',
+      [
+        // Set volume for each tone
+        '[1]volume=0.06[c]',
+        '[2]volume=0.05[e]',
+        '[3]volume=0.04[g]',
+        // Filter noise to soft ambient
+        '[4]highpass=f=400,lowpass=f=1200,volume=0.08[noise]',
+        // Mix all audio sources
+        '[c][e][g][noise]amix=inputs=4:duration=first',
+        // Add tremolo for pulsing feel
+        'tremolo=f=0.1:d=0.5',
+        // Add echo for depth/reverb
+        'aecho=0.8:0.7:500:0.3',
+        // Fade in (3s) and fade out (3s)
+        `afade=t=in:st=0:d=3`,
+        `afade=t=out:st=${fadeOut}:d=3`,
+        // Final volume adjustment
+        'volume=1.5[audio]'
+      ].join(','),
+      // Map video from input 0, audio from filter
+      '-map', '0:v',
+      '-map', '[audio]',
+      // Copy video (no re-encode), encode audio as AAC
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-shortest',
+      '-y',
+      finalVideoPath
+    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    let stderrOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      stderrOutput = data.toString();
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        const fileSize = (fs.statSync(finalVideoPath).size / 1024 / 1024).toFixed(2);
+        console.log(`✅ Audio added! Final video: ${finalVideoPath} (${fileSize} MB)`);
+        resolve();
+      } else {
+        console.error('FFmpeg audio error:', stderrOutput);
+        reject(new Error(`FFmpeg audio merge failed with code ${code}`));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      console.error('FFmpeg spawn error:', err.message);
+      reject(err);
+    });
+  });
+}
+
 // ======================== MAIN ========================
 async function main() {
   console.log('═══════════════════════════════════════════');
@@ -292,7 +371,9 @@ async function main() {
   const scene = Math.floor(Math.random() * SCENE_NAMES.length);
   const seed = Date.now();
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const outputPath = path.join(__dirname, '..', 'output', `satisfying_${SCENE_NAMES[scene].replace(/\s+/g, '_').toLowerCase()}_${timestamp}.mp4`);
+  const outputDir = path.join(__dirname, '..', 'output');
+  const silentPath = path.join(outputDir, `silent_${timestamp}.mp4`);
+  const finalPath = path.join(outputDir, `satisfying_${SCENE_NAMES[scene].replace(/\s+/g, '_').toLowerCase()}_${timestamp}.mp4`);
 
   // Build engaging caption
   const randomCaption = CAPTIONS_POOL[Math.floor(Math.random() * CAPTIONS_POOL.length)];
@@ -303,24 +384,25 @@ async function main() {
   const server = await startServer(projectRoot);
 
   try {
-    // 2. Capture video
-    await captureVideo(scene, seed, outputPath);
+    // 2. Capture silent video
+    await captureVideo(scene, seed, silentPath);
 
-    // 3. Send to Telegram
-    await sendToTelegram(outputPath, caption);
+    // 3. Add ambient audio
+    await addAmbientAudio(silentPath, finalPath, VIDEO_DURATION);
+
+    // 4. Send to Telegram
+    await sendToTelegram(finalPath, caption);
 
     console.log('\n🎉 Done! Video generated and sent successfully.\n');
   } catch (error) {
     console.error('\n💥 Error:', error.message);
     process.exit(1);
   } finally {
-    // 4. Cleanup
+    // 5. Cleanup
     server.close();
-    // Delete video file to save space (already sent to Telegram)
-    if (fs.existsSync(outputPath)) {
-      fs.unlinkSync(outputPath);
-      console.log('🧹 Cleaned up video file.');
-    }
+    if (fs.existsSync(silentPath)) fs.unlinkSync(silentPath);
+    if (fs.existsSync(finalPath)) fs.unlinkSync(finalPath);
+    console.log('🧹 Cleaned up video files.');
   }
 }
 
